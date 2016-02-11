@@ -2,6 +2,10 @@
 
 var parser = require('csv-parse');
 var fs = require('fs');
+var fsPromise = require('fs');
+var Promise = require('bluebird');
+
+Promise.promisifyAll(fsPromise);
 
 var parseCsv = function(data, callback) {
   parser(data, function(err, lines) {
@@ -15,6 +19,20 @@ var parseCsv = function(data, callback) {
   })
 };
 
+var parseCsvPromise = function(data)
+{
+  return new Promise(function(resolve, reject) {
+    parser(data, function(err, lines) {
+      if (err) {
+        reject(err);
+      }
+      // Interesting
+      // can't behave like callback version
+      resolve(lines);
+    });
+  });
+}
+
 var postToSmsGateway = function(data, callback)
 {
   // Construct object to be sent to smssoap
@@ -26,11 +44,25 @@ var postToSmsGateway = function(data, callback)
   }
 
   callback(0, success);
-  // smssoap(msisd, text, function(err, result) {
-  //  if (!err) {
-  //    callback(0, result);
-  //  }
-  // });
+}
+
+var postToSmsGatewayPromise = function(data)
+{
+  return new Promise(function(resolve, reject) {
+    var msisdn = data[0],
+        text = data[1];
+
+    var success = {
+      'message' : 'Successfully sent to: ' + msisdn
+    }
+
+    var err = false;
+    if (err) {
+      reject(err);
+    }
+
+    resolve(success);
+  });
 }
 
 var logS3 = function(data, callback)
@@ -41,6 +73,24 @@ var logS3 = function(data, callback)
   };
 
   callback(0, log);
+}
+
+var logS3Promise = function(data)
+{
+  return new Promise(function(resolve, reject) {
+    // publish to S3 log
+    var log = {
+      message: 'S3 LOG: Successfully publish to S3.'
+    };
+    var err = false;
+
+    if (err) {
+      reject(err);
+    }
+
+    resolve(log);
+
+  });
 }
 
 var doparse = function(file)
@@ -68,4 +118,19 @@ var doparse = function(file)
   });
 }
 
-doparse('FAILED.csv');
+var readCsv = function(csv) {
+  return fsPromise.readFileAsync(csv, 'utf8');
+}
+
+var doParsePromise = function(file)
+{
+  readCsv(file)
+    .then(function(data) { return parseCsvPromise(data); }).map(function(line) {
+      return postToSmsGatewayPromise(line);
+    }).map(function(result) {
+      return logS3Promise(result);
+    }).map(function(out) { console.log(out) });
+}
+
+//doparse('FAILED.csv');
+doParsePromise('FAILED.csv');
